@@ -1,1 +1,0 @@
-nuitka --standalone --onefile --windows-disable-console --windows-icon-from-ico=icon.ico --company-name="noedl.xyz" --product-name="R.E.P.O Save Editor" --file-version=1.0.0 --product-version=1.0.0 --copyright="© 2025 noedl.xyz" main.py

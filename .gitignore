@@ -1,9 +1,19 @@
-# Python virtual environment
+# Python
+__pycache__/
+*.pyc
 .venv/
+venv/
 
 # Build artifacts
 dist/
 build/
+*.spec
 
-# files
+# IDE
+.vscode/
+.idea/
+
+# Test / temp files
+*.json
+!package.json
 pass
