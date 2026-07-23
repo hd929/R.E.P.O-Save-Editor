@@ -1,6 +1,6 @@
-import sys, json, re, io, shutil, requests, webbrowser
+import sys, json, re, shutil, requests, webbrowser
 from customtkinter import *
-from tkinter import BOTH, Text, Toplevel, filedialog, messagebox
+from tkinter import BOTH, Text, filedialog, messagebox
 from lib.CTkMenuBar import *
 from lib.CTkToolTip import *
 from lib.decrypt import decrypt_es3
@@ -9,6 +9,7 @@ from datetime import datetime
 from xml.etree import ElementTree
 from PIL import Image
 from pathlib import Path
+from threading import Thread
 
 DEBUGLEVEL = None
 ES3_KEY = "Why would you want to cheat?... :o It's no fun. :') :'D"
@@ -24,9 +25,9 @@ if DEBUGLEVEL:
 BUNDLE_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
 
 CACHE_DIR = Path.home() / ".cache" / "noedl.xyz"
-CACHE_DIR.mkdir(parents=True, exist_ok=True) 
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-version = "1.0.0"
+version = "1.1.0"
 json_data = {}
 savefilename = ""
 savefile_path = None
@@ -66,52 +67,35 @@ button_file = menu.add_cascade("File")
 button_help = menu.add_cascade("Help")
 dropdown1 = CustomDropdownMenu(widget=button_file)
 dropdown1.add_option(option="Open", command=lambda: open_file())
+dropdown1.add_option(option="Save", command=lambda: save_data())
 dropdown2 = CustomDropdownMenu(widget=button_help)
 dropdown2.add_option(option="How to Use", command=lambda: webbrowser.open("https://github.com/N0edL/R.E.P.O-Save-Editor#how-to-use"))
 dropdown2.add_option(option="About", command=lambda: webbrowser.open("https://github.com/N0edL/R.E.P.O-Save-Editor"))
 dropdown2.add_option(option="Report Issue", command=lambda: webbrowser.open("https://github.com/N0edL/R.E.P.O-Save-Editor/issues/new"))
 
-# ── Footer ──
-def get_latest_version():
+# ── Footer (version check in background) ──
+label_footer = CTkLabel(root, text=f"v{version}  |  {datetime.now().year} noedl.xyz", font=font_small, text_color=TEXT_DIM)
+label_footer.pack(side="bottom", pady=5)
+
+def check_version_async():
     try:
         response = requests.get("https://api.github.com/repos/N0edL/R.E.P.O-Save-Editor/releases/latest", timeout=5)
-        return response.json().get("tag_name", "Unknown")
-    except requests.exceptions.RequestException:
-        return "Unknown"
+        latest = response.json().get("tag_name", "Unknown")
+        if latest not in (version, f"v{version}", "Unknown"):
+            root.after(0, lambda: label_footer.configure(
+                text=f"v{version}  (Latest: {latest})  |  {datetime.now().year} noedl.xyz"))
+    except Exception:
+        pass
 
-latest = get_latest_version()
-footer_text = f"v{version}"
-if latest not in (version, "Unknown"):
-    footer_text += f"  (Latest: {latest})"
-footer_text += f"  |  {datetime.now().year} noedl.xyz"
-label_footer = CTkLabel(root, text=footer_text, font=font_small, text_color=TEXT_DIM)
-label_footer.pack(side="bottom", pady=5)
+Thread(target=check_version_async, daemon=True).start()
 
 # ── State ──
 players = []
-player_entries = {}
-picker_frame_ref = None
+player_entries = {}  # key: "{name}" for health, "{name}_{upgradeKey}" for upgrades
 
 # ── Helpers ──
 def decrypt_save(path):
     return json.loads(decrypt_es3(str(path), ES3_KEY))
-
-def peek_save_info(es3_path):
-    """Read save file and return summary dict, or None on failure."""
-    try:
-        data = decrypt_save(es3_path)
-        run = data.get("dictionaryOfDictionaries", {}).get("value", {}).get("runStats", {})
-        names = data.get("playerNames", {}).get("value", {})
-        team = data.get("teamName", {}).get("value", "?")
-        return {
-            "level": run.get("level", "?"),
-            "currency": run.get("currency", "?"),
-            "lives": run.get("lives", "?"),
-            "players": len(names),
-            "team": team,
-        }
-    except Exception:
-        return None
 
 def create_entry(label_text, parent, update_callback=None, tooltip=None, fg=BG_CARD):
     frame = CTkFrame(parent, fg_color=fg, corner_radius=6)
@@ -141,18 +125,41 @@ def highlight_json():
     for match in re.finditer(r'(:\s*)(true|false|null)', json_text):
         textbox.tag_add("boolean", f"1.0+{match.start(2)}c", f"1.0+{match.end(2)}c")
 
+UPGRADE_KEYS = [
+    ("Health", "playerUpgradeHealth"),
+    ("Stamina", "playerUpgradeStamina"),
+    ("Extra Jump", "playerUpgradeExtraJump"),
+    ("Launch", "playerUpgradeLaunch"),
+    ("Map Player Count", "playerUpgradeMapPlayerCount"),
+    ("Speed", "playerUpgradeSpeed"),
+    ("Strength", "playerUpgradeStrength"),
+    ("Range", "playerUpgradeRange"),
+    ("Throw", "playerUpgradeThrow"),
+]
+
 # ── Data sync ──
 def update_json_data(event):
     try:
-        json_data['dictionaryOfDictionaries']['value']['runStats']['level'] = int(entry_level.get())
-        json_data['dictionaryOfDictionaries']['value']['runStats']['currency'] = int(entry_currency.get())
-        json_data['dictionaryOfDictionaries']['value']['runStats']['lives'] = int(entry_lives.get())
-        json_data['dictionaryOfDictionaries']['value']['runStats']['chargingStationCharge'] = int(entry_charging.get())
-        json_data['dictionaryOfDictionaries']['value']['runStats']['totalHaul'] = int(entry_haul.get())
+        dd = json_data['dictionaryOfDictionaries']['value']
+        dd['runStats']['level'] = int(entry_level.get())
+        dd['runStats']['currency'] = int(entry_currency.get())
+        dd['runStats']['lives'] = int(entry_lives.get())
+        dd['runStats']['chargingStationCharge'] = int(entry_charging.get())
+        dd['runStats']['totalHaul'] = int(entry_haul.get())
         json_data['teamName']['value'] = entry_teamname.get()
         for player in players:
-            player['health'] = int(player_entries[player['name']].get())
-            json_data['dictionaryOfDictionaries']['value']['playerHealth'][player['id']] = player['health']
+            pid = player['id']
+            # Health
+            health_key = player['name']
+            if health_key in player_entries:
+                val = int(player_entries[health_key].get())
+                player['health'] = val
+                dd['playerHealth'][pid] = val
+            # Upgrades
+            for _, upgrade_key in UPGRADE_KEYS:
+                entry_key = f"{player['name']}_{upgrade_key}"
+                if entry_key in player_entries and upgrade_key in dd and pid in dd[upgrade_key]:
+                    dd[upgrade_key][pid] = int(player_entries[entry_key].get())
         textbox.delete("1.0", "end")
         textbox.insert("1.0", json.dumps(json_data, indent=4))
         highlight_json()
@@ -181,23 +188,28 @@ def open_file():
     file_path = filedialog.askopenfilename(initialdir=savefile_dir, filetypes=[("Game Save (.es3 file)", "*.es3")])
     if not file_path:
         return
-    json_data = decrypt_save(file_path)
-    savefilename = Path(file_path).name
-    savefile_path = Path(file_path)
-    update_ui_from_json(json_data)
+    try:
+        json_data = decrypt_save(file_path)
+        savefilename = Path(file_path).name
+        savefile_path = Path(file_path)
+        update_ui_from_json(json_data)
+    except Exception as e:
+        messagebox.showerror("Open Error", f"Failed to open:\n{file_path}\n\n{e}")
 
 def save_data():
-    global savefile_path
     if not json_data:
         messagebox.showerror("Error", "No data to save.")
         return
-    if not savefile_path or not savefile_path.exists():
-        messagebox.showerror("Error", "Save file path unknown.")
+    if not savefile_path:
+        messagebox.showerror("Error", "No save file loaded.")
         return
-    encrypted_data = encrypt_es3(json.dumps(json_data, indent=4).encode('utf-8'), ES3_KEY)
-    with open(savefile_path, 'wb') as f:
-        f.write(encrypted_data)
-    messagebox.showinfo("Saved", f"Saved:\n{savefile_path.name}")
+    try:
+        encrypted_data = encrypt_es3(json.dumps(json_data, indent=4).encode('utf-8'), ES3_KEY)
+        with open(savefile_path, 'wb') as f:
+            f.write(encrypted_data)
+        messagebox.showinfo("Saved", f"Saved:\n{savefile_path.name}")
+    except Exception as e:
+        messagebox.showerror("Save Error", f"Failed to save:\n{e}")
 
 # ── Steam avatar ──
 def fetch_steam_profile_picture(player_id):
@@ -219,7 +231,11 @@ def fetch_steam_profile_picture(player_id):
         pass
     fallback_path = CACHE_DIR / f"{player_id}_fallback.png"
     if not fallback_path.exists():
-        shutil.copy(str(BUNDLE_DIR / "example.png"), str(fallback_path))
+        src = BUNDLE_DIR / "example.png"
+        if src.exists():
+            shutil.copy(str(src), str(fallback_path))
+        else:
+            return None
     return str(fallback_path)
 
 # ── Editor UI ──
@@ -232,8 +248,6 @@ def update_ui_from_json(data):
     for w in root.winfo_children():
         if w != label_footer and w != menu:
             w.destroy()
-
-    dropdown1.add_option(option="Save", command=lambda: save_data())
 
     # ── Toolbar ──
     toolbar = CTkFrame(root, fg_color=BG_SURFACE, corner_radius=0, height=45)
@@ -265,7 +279,6 @@ def update_ui_from_json(data):
     frame_world = CTkScrollableFrame(tabview.tab("World"), fg_color="transparent")
     frame_world.pack(fill=BOTH, expand=True, padx=5, pady=5)
 
-    # Section: Run Stats
     section_run = CTkFrame(frame_world, fg_color=BG_SURFACE, corner_radius=10)
     section_run.pack(fill="x", pady=(0, 8))
     CTkLabel(section_run, text="Run Stats", font=font_heading, text_color=BG_ACCENT).pack(anchor="w", padx=12, pady=(8, 4))
@@ -284,7 +297,6 @@ def update_ui_from_json(data):
     entry_charging.insert(0, run['chargingStationCharge'])
     entry_haul.insert(0, run['totalHaul'])
 
-    # Section: Team
     section_team = CTkFrame(frame_world, fg_color=BG_SURFACE, corner_radius=10)
     section_team.pack(fill="x", pady=(0, 8))
     CTkLabel(section_team, text="Team", font=font_heading, text_color=BG_ACCENT).pack(anchor="w", padx=12, pady=(8, 4))
@@ -299,47 +311,33 @@ def update_ui_from_json(data):
         player_health = data["dictionaryOfDictionaries"]["value"]["playerHealth"][player_id]
         players.append({"id": player_id, "name": player_name, "health": player_health})
 
-    upgrades_map = [
-        ("Health", "playerUpgradeHealth"),
-        ("Stamina", "playerUpgradeStamina"),
-        ("Extra Jump", "playerUpgradeExtraJump"),
-        ("Launch", "playerUpgradeLaunch"),
-        ("Map Player Count", "playerUpgradeMapPlayerCount"),
-        ("Speed", "playerUpgradeSpeed"),
-        ("Strength", "playerUpgradeStrength"),
-        ("Range", "playerUpgradeRange"),
-        ("Throw", "playerUpgradeThrow"),
-    ]
-
     for player in players:
         card = CTkFrame(frame_player, corner_radius=10, fg_color=BG_SURFACE, border_width=1, border_color=BORDER_CLR)
         card.pack(fill="x", pady=5)
 
-        # Header row with avatar + name
         header = CTkFrame(card, fg_color="transparent")
         header.pack(fill="x", padx=10, pady=(10, 5))
 
-        try:
-            profile_picture_path = fetch_steam_profile_picture(player['id'])
-            image = Image.open(profile_picture_path)
-            my_image = CTkImage(light_image=image, dark_image=image, size=(36, 36))
-            CTkLabel(header, image=my_image, text="").pack(side="left", padx=(0, 8))
-        except Exception:
-            pass
+        pic_path = fetch_steam_profile_picture(player['id'])
+        if pic_path:
+            try:
+                image = Image.open(pic_path)
+                my_image = CTkImage(light_image=image, dark_image=image, size=(36, 36))
+                CTkLabel(header, image=my_image, text="").pack(side="left", padx=(0, 8))
+            except Exception:
+                pass
 
         CTkLabel(header, text=player['name'], font=("Segoe UI", 14, "bold"), text_color="white").pack(side="left")
 
-        # Health
         health_entry = create_entry("Health", card, update_json_data, "Player health (max 200)", fg=BG_SURFACE)
         health_entry.insert(0, player['health'])
         player_entries[player['name']] = health_entry
 
-        # Upgrades section
         CTkFrame(card, height=1, fg_color=BORDER_CLR).pack(fill="x", padx=10, pady=6)
         CTkLabel(card, text="Upgrades", font=("Segoe UI", 11, "bold"), text_color=TEXT_DIM).pack(anchor="w", padx=14)
 
         dd = data['dictionaryOfDictionaries']['value']
-        for label_text, key in upgrades_map:
+        for label_text, key in UPGRADE_KEYS:
             if key in dd and player['id'] in dd[key]:
                 e = create_entry(label_text, card, update_json_data, fg=BG_SURFACE)
                 e.insert(0, dd[key][player['id']])
@@ -379,24 +377,52 @@ def get_save_folders():
                 result.append((d, latest))
     return result
 
-def show_save_picker():
-    global picker_frame_ref
+# Cache for save info to avoid decrypting repeatedly
+_save_info_cache = {}
 
+def peek_save_info(es3_path):
+    """Read save file and return summary dict, or None on failure. Cached."""
+    cache_key = (str(es3_path), es3_path.stat().st_mtime)
+    if cache_key in _save_info_cache:
+        return _save_info_cache[cache_key]
+    try:
+        data = decrypt_save(es3_path)
+        run = data.get("dictionaryOfDictionaries", {}).get("value", {}).get("runStats", {})
+        names = data.get("playerNames", {}).get("value", {})
+        team = data.get("teamName", {}).get("value", "?")
+        info = {
+            "level": run.get("level", "?"),
+            "currency": run.get("currency", "?"),
+            "lives": run.get("lives", "?"),
+            "players": len(names),
+            "team": team,
+        }
+        _save_info_cache[cache_key] = info
+        return info
+    except Exception:
+        _save_info_cache[cache_key] = None
+        return None
+
+def show_save_picker():
     # Clear existing content except footer and menu
     for w in root.winfo_children():
         if w != label_footer and w != menu:
             w.destroy()
 
+    if not savefile_dir.exists():
+        CTkLabel(root, text=f"Save directory not found:\n{savefile_dir}", font=font_normal,
+                 text_color=TEXT_DIM, wraplength=600).pack(expand=True)
+        return
+
     save_folders = get_save_folders()
     if not save_folders:
-        CTkLabel(root, text="No saves found", font=font_heading, text_color=TEXT_DIM).pack(expand=True)
+        CTkLabel(root, text=f"No saves found in:\n{savefile_dir}", font=font_normal,
+                 text_color=TEXT_DIM, wraplength=600).pack(expand=True)
         return
 
     picker_frame = CTkScrollableFrame(root, fg_color="transparent")
     picker_frame.pack(fill=BOTH, expand=True, padx=20, pady=10)
-    picker_frame_ref = picker_frame
 
-    # Header
     header = CTkFrame(picker_frame, fg_color="transparent")
     header.pack(fill="x", pady=(0, 12))
     CTkLabel(header, text="Your Saves", font=("Segoe UI", 22, "bold"), text_color="white").pack(side="left")
@@ -436,7 +462,6 @@ def show_save_picker():
         card = CTkFrame(picker_frame, fg_color=BG_SURFACE, corner_radius=10, border_width=1, border_color=BORDER_CLR)
         card.pack(fill="x", pady=4)
 
-        # Left side: info
         left = CTkFrame(card, fg_color="transparent")
         left.pack(side="left", fill="both", expand=True, padx=14, pady=10)
 
@@ -447,7 +472,6 @@ def show_save_picker():
             info_text = f"Lv.{info['level']}  |  ${info['currency']}  |  {info['lives']} lives  |  {info['players']} players  |  {info['team']}"
             CTkLabel(left, text=info_text, font=font_small, text_color="#8899bb", anchor="w").pack(anchor="w", pady=(2, 0))
 
-        # Right side: buttons
         right = CTkFrame(card, fg_color="transparent")
         right.pack(side="right", padx=10, pady=10)
 
