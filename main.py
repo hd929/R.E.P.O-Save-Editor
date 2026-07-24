@@ -184,16 +184,23 @@ def on_json_edit(event):
     global json_data
     try:
         updated_data = json.loads(textbox.get("1.0", "end-1c"))
-        run = updated_data['dictionaryOfDictionaries']['value']['runStats']
-        entry_level.delete(0, "end"); entry_level.insert(0, run['level'])
-        entry_currency.delete(0, "end"); entry_currency.insert(0, run['currency'])
-        entry_lives.delete(0, "end"); entry_lives.insert(0, run['lives'])
-        entry_charging.delete(0, "end"); entry_charging.insert(0, run['chargingStationCharge'])
-        entry_haul.delete(0, "end"); entry_haul.insert(0, run['totalHaul'])
-        entry_teamname.delete(0, "end"); entry_teamname.insert(0, updated_data['teamName']['value'])
+        dd = updated_data.get('dictionaryOfDictionaries', {})
+        inner = dd.get('value', {}) if isinstance(dd, dict) else {}
+        run = inner.get('runStats', {}) if isinstance(inner, dict) else {}
+        if isinstance(run, dict):
+            entry_level.delete(0, "end"); entry_level.insert(0, run.get('level', 1))
+            entry_currency.delete(0, "end"); entry_currency.insert(0, run.get('currency', 0))
+            entry_lives.delete(0, "end"); entry_lives.insert(0, run.get('lives', 3))
+            entry_charging.delete(0, "end"); entry_charging.insert(0, run.get('chargingStationCharge', 0))
+            entry_haul.delete(0, "end"); entry_haul.insert(0, run.get('totalHaul', 0))
+        team_data = updated_data.get('teamName', {})
+        if isinstance(team_data, dict):
+            entry_teamname.delete(0, "end"); entry_teamname.insert(0, team_data.get('value', 'Unknown'))
+        else:
+            entry_teamname.delete(0, "end")
         json_data = updated_data
         highlight_json()
-    except (json.JSONDecodeError, KeyError):
+    except (json.JSONDecodeError, KeyError, TypeError):
         pass
 
 # ── File operations ──
@@ -255,9 +262,10 @@ def fetch_steam_profile_picture(player_id):
 
 # ── Editor UI ──
 def update_ui_from_json(data):
-    global players, player_entries
+    global players, player_entries, json_data, textbox
     players.clear()
     player_entries.clear()
+    json_data = data
 
     # Clear root content
     for w in root.winfo_children():
@@ -305,24 +313,38 @@ def update_ui_from_json(data):
     entry_charging = create_entry("Charging Station", section_run, update_json_data, "Charging station charge amount", fg=BG_SURFACE)
     entry_haul = create_entry("Total Haul", section_run, update_json_data, "Total haul value", fg=BG_SURFACE)
 
-    run = data.get('dictionaryOfDictionaries', {}).get('value', {}).get('runStats', {})
-    entry_level.insert(0, run.get('level', 1))
-    entry_currency.insert(0, run.get('currency', 0))
-    entry_lives.insert(0, run.get('lives', 3))
-    entry_charging.insert(0, run.get('chargingStationCharge', 0))
-    entry_haul.insert(0, run.get('totalHaul', 0))
+    dd = data.get('dictionaryOfDictionaries', {})
+    if isinstance(dd, dict):
+        inner = dd.get('value', {})
+        if isinstance(inner, dict):
+            run = inner.get('runStats', {})
+            if isinstance(run, dict):
+                entry_level.insert(0, run.get('level', 1))
+                entry_currency.insert(0, run.get('currency', 0))
+                entry_lives.insert(0, run.get('lives', 3))
+                entry_charging.insert(0, run.get('chargingStationCharge', 0))
+                entry_haul.insert(0, run.get('totalHaul', 0))
 
     # Tools section
     section_tools = CTkFrame(frame_world, fg_color=BG_SURFACE, corner_radius=10)
     section_tools.pack(fill="x", pady=(0, 8))
     CTkLabel(section_tools, text="Quick Actions", font=font_heading, text_color=BG_ACCENT).pack(anchor="w", padx=12, pady=(8, 4))
-    
+
     def recharge_all_items():
-        if 'itemStatBattery' in json_data['dictionaryOfDictionaries']['value']:
+        try:
+            dd = json_data.get('dictionaryOfDictionaries', {})
+            if not isinstance(dd, dict):
+                return
+            inner = dd.get('value', {})
+            if not isinstance(inner, dict):
+                return
+            battery = inner.get('itemStatBattery', {})
+            if not isinstance(battery, dict):
+                return
             count = 0
-            for item_key in json_data['dictionaryOfDictionaries']['value']['itemStatBattery']:
-                if json_data['dictionaryOfDictionaries']['value']['itemStatBattery'][item_key] != 100:
-                    json_data['dictionaryOfDictionaries']['value']['itemStatBattery'][item_key] = 100
+            for item_key in battery:
+                if battery[item_key] != 100:
+                    battery[item_key] = 100
                     count += 1
             if count > 0:
                 textbox.delete("1.0", "end")
@@ -331,6 +353,8 @@ def update_ui_from_json(data):
                 messagebox.showinfo("Success", f"Recharged {count} items (Guns, Crystals, etc.) to 100%!")
             else:
                 messagebox.showinfo("Info", "All items are already fully charged.")
+        except Exception:
+            pass
 
     btn_recharge = CTkButton(section_tools, text="⚡ Recharge All Items (100%)", command=recharge_all_items, fg_color=BG_ACCENT, hover_color="#2b7e61", text_color="white")
     btn_recharge.pack(anchor="w", padx=12, pady=(0, 12))
@@ -339,15 +363,30 @@ def update_ui_from_json(data):
     section_team.pack(fill="x", pady=(0, 8))
     CTkLabel(section_team, text="Team", font=font_heading, text_color=BG_ACCENT).pack(anchor="w", padx=12, pady=(8, 4))
     entry_teamname = create_entry("Team Name", section_team, update_json_data, "Name of the team", fg=BG_SURFACE)
-    entry_teamname.insert(0, data.get('teamName', {}).get('value', 'Unknown'))
+    team_name_data = data.get('teamName', {})
+    if isinstance(team_name_data, dict):
+        entry_teamname.insert(0, team_name_data.get('value', 'Unknown'))
+    else:
+        entry_teamname.insert(0, str(team_name_data) if team_name_data else 'Unknown')
 
     # ── Player tab ──
     frame_player = CTkScrollableFrame(tabview.tab("Player"), fg_color="transparent")
     frame_player.pack(fill=BOTH, expand=True, padx=5, pady=5)
 
-    for player_id, player_name in data.get("playerNames", {}).get("value", {}).items():
-        player_health = data.get("dictionaryOfDictionaries", {}).get("value", {}).get("playerHealth", {}).get(player_id, 100)
-        players.append({"id": player_id, "name": player_name, "health": player_health})
+    player_names_data = data.get("playerNames", {})
+    if isinstance(player_names_data, dict):
+        pn_value = player_names_data.get("value", {})
+        if isinstance(pn_value, dict):
+            for player_id, player_name in pn_value.items():
+                dd2 = data.get("dictionaryOfDictionaries", {})
+                ph = {}
+                if isinstance(dd2, dict):
+                    inner2 = dd2.get("value", {})
+                    if isinstance(inner2, dict):
+                        ph = inner2.get("playerHealth", {})
+                        if not isinstance(ph, dict):
+                            ph = {}
+                players.append({"id": player_id, "name": player_name, "health": ph.get(player_id, 100)})
 
     for player in players:
         card = CTkFrame(frame_player, corner_radius=10, fg_color=BG_SURFACE, border_width=1, border_color=BORDER_CLR)
@@ -374,9 +413,17 @@ def update_ui_from_json(data):
         CTkFrame(card, height=1, fg_color=BORDER_CLR).pack(fill="x", padx=10, pady=6)
         CTkLabel(card, text="Upgrades", font=("Segoe UI", 11, "bold"), text_color=TEXT_DIM).pack(anchor="w", padx=14)
 
-        dd = data.get('dictionaryOfDictionaries', {}).get('value', {})
+        dd3 = data.get('dictionaryOfDictionaries', {})
+        upg_inner = {}
+        if isinstance(dd3, dict):
+            upg_inner = dd3.get('value', {})
+            if not isinstance(upg_inner, dict):
+                upg_inner = {}
         for label_text, key in UPGRADE_KEYS:
-            val = dd.get(key, {}).get(player['id'], 0)
+            upg_dict = upg_inner.get(key, {})
+            if not isinstance(upg_dict, dict):
+                upg_dict = {}
+            val = upg_dict.get(player['id'], 0)
             e = create_entry(label_text, card, update_json_data, fg=BG_SURFACE)
             e.insert(0, val)
             player_entries[f"{player['name']}_{key}"] = e
