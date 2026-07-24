@@ -6,7 +6,6 @@ from lib.CTkToolTip import *
 from lib.decrypt import decrypt_es3
 from lib.encrypt import encrypt_es3
 from datetime import datetime
-from xml.etree import ElementTree
 from PIL import Image
 from pathlib import Path
 from threading import Thread
@@ -217,17 +216,18 @@ def fetch_steam_profile_picture(player_id):
     cached_image_path = CACHE_DIR / f"{player_id}.png"
     if cached_image_path.exists():
         return str(cached_image_path)
+    url = f"https://steamcommunity.com/profiles/{player_id}?xml=1"
     try:
-        url = f"https://steamcommunity.com/profiles/{player_id}/?xml=1"
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
-            tree = ElementTree.fromstring(response.content)
-            avatar_icon = tree.find('avatarIcon')
-            if avatar_icon is not None:
-                img_data = requests.get(avatar_icon.text, timeout=5).content
-                with open(cached_image_path, 'wb') as file:
-                    file.write(img_data)
-                return str(cached_image_path)
+            match = re.search(r'<avatarIcon><!\[CDATA\[(.*?)\]\]></avatarIcon>', response.text)
+            if match:
+                img_url = match.group(1)
+                if img_url.startswith("http"):
+                    img_data = requests.get(img_url, timeout=5).content
+                    with open(cached_image_path, 'wb') as file:
+                        file.write(img_data)
+                    return str(cached_image_path)
     except Exception:
         pass
     fallback_path = CACHE_DIR / f"{player_id}_fallback.png"
