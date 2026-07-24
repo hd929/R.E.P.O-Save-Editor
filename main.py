@@ -424,6 +424,9 @@ def _update_ui_from_json_impl(data):
             inner['itemsPurchased']["Item Power Crystal"] = inner['itemsPurchased'].get("Item Power Crystal", 0) + num_to_spawn
             inner['itemsPurchasedTotal']["Item Power Crystal"] = inner['itemsPurchasedTotal'].get("Item Power Crystal", 0) + num_to_spawn
 
+            # Save to file automatically
+            save_data()
+
             textbox.delete("1.0", "end")
             textbox.insert("1.0", json.dumps(json_data, indent=4))
             highlight_json()
