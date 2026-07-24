@@ -142,11 +142,20 @@ def update_json_data(event=None):
     try:
         dd = json_data.get('dictionaryOfDictionaries', {}).get('value', {})
         runStats = dd.get('runStats', {})
-        runStats['level'] = int(entry_level.get())
-        runStats['currency'] = int(entry_currency.get())
-        runStats['lives'] = int(entry_lives.get())
-        runStats['chargingStationCharge'] = int(entry_charging.get())
-        runStats['totalHaul'] = int(entry_haul.get())
+        
+        # Safe limits for Unity Int32 to prevent OverflowException
+        def safe_int(val_str, max_val=2000000000):
+            try:
+                v = int(val_str)
+                return min(v, max_val)
+            except ValueError:
+                return 0
+
+        runStats['level'] = safe_int(entry_level.get())
+        runStats['currency'] = safe_int(entry_currency.get())
+        runStats['lives'] = safe_int(entry_lives.get(), max_val=999)
+        runStats['chargingStationCharge'] = safe_int(entry_charging.get())
+        runStats['totalHaul'] = safe_int(entry_haul.get(), max_val=100000000) # Game multiplies this sometimes, keep it < 100M
         
         if 'dictionaryOfDictionaries' not in json_data:
             json_data['dictionaryOfDictionaries'] = {'value': dd}
@@ -164,7 +173,7 @@ def update_json_data(event=None):
             # Health
             health_key = player['name']
             if health_key in player_entries:
-                val = int(player_entries[health_key].get())
+                val = safe_int(player_entries[health_key].get(), max_val=2000000000)
                 player['health'] = val
                 dd['playerHealth'][pid] = val
             # Upgrades
@@ -173,7 +182,7 @@ def update_json_data(event=None):
                 if entry_key in player_entries:
                     if upgrade_key not in dd:
                         dd[upgrade_key] = {}
-                    dd[upgrade_key][pid] = int(player_entries[entry_key].get())
+                    dd[upgrade_key][pid] = safe_int(player_entries[entry_key].get(), max_val=99999)
                     
         # Synchronize itemsUpgradesPurchased to bypass game validation
         if 'itemsUpgradesPurchased' not in dd:
