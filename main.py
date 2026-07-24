@@ -215,7 +215,9 @@ def open_file():
         savefile_path = Path(file_path)
         update_ui_from_json(json_data)
     except Exception as e:
-        messagebox.showerror("Open Error", f"Failed to open:\n{file_path}\n\n{e}")
+        import traceback
+        traceback.print_exc()
+        messagebox.showerror("Open Error", f"Failed to open:\n{file_path}\n\n{e}\n\nType: {type(e).__name__}")
 
 def save_data():
     if not json_data:
@@ -263,9 +265,14 @@ def fetch_steam_profile_picture(player_id):
 # ── Editor UI ──
 def update_ui_from_json(data):
     global players, player_entries, json_data, textbox
-    players.clear()
-    player_entries.clear()
-    json_data = data
+    import traceback
+    try:
+        _update_ui_from_json_impl(data)
+    except Exception as e:
+        traceback.print_exc()
+        messagebox.showerror("Load Error", f"Failed to load UI:\n{e}\n\nType: {type(e).__name__}")
+
+def _update_ui_from_json_impl(data):
 
     # Clear root content
     for w in root.winfo_children():
