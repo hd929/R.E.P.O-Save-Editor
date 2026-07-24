@@ -158,7 +158,9 @@ def update_json_data(event):
             # Upgrades
             for _, upgrade_key in UPGRADE_KEYS:
                 entry_key = f"{player['name']}_{upgrade_key}"
-                if entry_key in player_entries and upgrade_key in dd and pid in dd[upgrade_key]:
+                if entry_key in player_entries:
+                    if upgrade_key not in dd:
+                        dd[upgrade_key] = {}
                     dd[upgrade_key][pid] = int(player_entries[entry_key].get())
         textbox.delete("1.0", "end")
         textbox.insert("1.0", json.dumps(json_data, indent=4))
@@ -332,7 +334,7 @@ def update_ui_from_json(data):
     frame_player.pack(fill=BOTH, expand=True, padx=5, pady=5)
 
     for player_id, player_name in data["playerNames"]["value"].items():
-        player_health = data["dictionaryOfDictionaries"]["value"]["playerHealth"][player_id]
+        player_health = data["dictionaryOfDictionaries"]["value"].get("playerHealth", {}).get(player_id, 100)
         players.append({"id": player_id, "name": player_name, "health": player_health})
 
     for player in players:
@@ -362,10 +364,10 @@ def update_ui_from_json(data):
 
         dd = data['dictionaryOfDictionaries']['value']
         for label_text, key in UPGRADE_KEYS:
-            if key in dd and player['id'] in dd[key]:
-                e = create_entry(label_text, card, update_json_data, fg=BG_SURFACE)
-                e.insert(0, dd[key][player['id']])
-                player_entries[f"{player['name']}_{key}"] = e
+            val = dd.get(key, {}).get(player['id'], 0)
+            e = create_entry(label_text, card, update_json_data, fg=BG_SURFACE)
+            e.insert(0, val)
+            player_entries[f"{player['name']}_{key}"] = e
 
     # ── Advanced tab ──
     frame_advanced = CTkFrame(tabview.tab("Advanced"), corner_radius=10, fg_color=BG_SURFACE)
