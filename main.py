@@ -135,6 +135,7 @@ UPGRADE_KEYS = [
     ("Strength", "playerUpgradeStrength"),
     ("Range", "playerUpgradeRange"),
     ("Throw", "playerUpgradeThrow"),
+    ("Crown (0 or 1)", "playerHasCrown"),
 ]
 
 # ── Data sync ──
