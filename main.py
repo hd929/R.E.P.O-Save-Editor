@@ -399,20 +399,27 @@ def _update_ui_from_json_impl(data):
             inner = dd.get('value', {})
             if not isinstance(inner, dict): return
 
-            items_to_add = [
-                "Item Gun Handgun",
-                "Item Gun Shotgun",
-                "Item Health Pack Large",
-                "Item Grenade Shockwave",
-                "Item Grenade Explosive"
-            ]
+            dialog = CTkInputDialog(text="How many Power Crystals do you want to drop?", title="Delivery Drop")
+            amount = dialog.get_input()
+            if not amount or not amount.isdigit():
+                return
+                
+            num_crystals = int(amount)
+            if num_crystals <= 0: return
+
+            items_to_add = {
+                "Item Power Crystal": num_crystals,
+                "Item Gun Handgun": 1,
+                "Item Gun Shotgun": 1,
+                "Item Health Pack Large": 1
+            }
 
             if 'itemsPurchased' not in inner: inner['itemsPurchased'] = {}
             if 'itemsPurchasedTotal' not in inner: inner['itemsPurchasedTotal'] = {}
             
-            for itm in items_to_add:
-                inner['itemsPurchased'][itm] = inner['itemsPurchased'].get(itm, 0) + 1
-                inner['itemsPurchasedTotal'][itm] = inner['itemsPurchasedTotal'].get(itm, 0) + 1
+            for itm, qty in items_to_add.items():
+                inner['itemsPurchased'][itm] = inner['itemsPurchased'].get(itm, 0) + qty
+                inner['itemsPurchasedTotal'][itm] = inner['itemsPurchasedTotal'].get(itm, 0) + qty
 
             # Save to file automatically
             save_data()
@@ -420,7 +427,7 @@ def _update_ui_from_json_impl(data):
             textbox.delete("1.0", "end")
             textbox.insert("1.0", json.dumps(json_data, indent=4))
             highlight_json()
-            messagebox.showinfo("Success", f"Added 5 useful items to your shopping cart delivery queue!")
+            messagebox.showinfo("Success", f"Added {num_crystals} Power Crystals and some guns to your delivery queue!\nLoad your game to receive the package.")
         except Exception as e:
             messagebox.showerror("Error", f"Could not spawn items: {e}")
 
