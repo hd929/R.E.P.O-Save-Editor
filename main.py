@@ -527,13 +527,15 @@ def show_save_picker(filter_steam_id=None):
         return
 
     # Collect all unique Steam IDs across all saves for the filter
-    all_steam_ids = set()
+    all_steam_ids = {}
     save_infos = {}
     for src_folder, es3_path in save_folders:
         info = peek_save_info(es3_path)
         save_infos[es3_path] = info
-        if info and "steam_ids" in info:
-            all_steam_ids.update(info["steam_ids"])
+        if info and "steam_ids" in info and "player_names" in info:
+            for sid, sname in zip(info["steam_ids"], info["player_names"]):
+                if sid not in all_steam_ids:
+                    all_steam_ids[sid] = sname
 
     picker_frame = CTkScrollableFrame(root, fg_color="transparent")
     picker_frame.pack(fill=BOTH, expand=True, padx=20, pady=10)
@@ -545,17 +547,25 @@ def show_save_picker(filter_steam_id=None):
     if all_steam_ids:
         filter_frame = CTkFrame(header, fg_color="transparent")
         filter_frame.pack(side="right", padx=(10, 0))
-        CTkLabel(filter_frame, text="Filter by Steam ID:", font=font_small, text_color=TEXT_DIM).pack(side="left", padx=(0, 5))
+        CTkLabel(filter_frame, text="Filter by Account:", font=font_small, text_color=TEXT_DIM).pack(side="left", padx=(0, 5))
         
-        filter_options = ["All Accounts"] + list(all_steam_ids)
-        current_val = filter_steam_id if filter_steam_id in filter_options else "All Accounts"
+        filter_options = ["All Accounts"] + [f"{name} ({sid})" for sid, name in all_steam_ids.items()]
         
+        current_val = "All Accounts"
+        if filter_steam_id and filter_steam_id in all_steam_ids:
+            current_val = f"{all_steam_ids[filter_steam_id]} ({filter_steam_id})"
+            
         def on_filter_change(choice):
-            show_save_picker(choice if choice != "All Accounts" else None)
+            if choice == "All Accounts":
+                show_save_picker(None)
+            else:
+                # Extract Steam ID from format "Name (ID)"
+                sid = choice.split(" (")[-1].replace(")", "")
+                show_save_picker(sid)
             
         dropdown = CTkOptionMenu(filter_frame, values=filter_options, command=on_filter_change,
                                  fg_color=BG_ENTRY, button_color=BG_SURFACE, button_hover_color=BG_HOVER,
-                                 dropdown_fg_color=BG_SURFACE, dropdown_hover_color=BG_HOVER, width=150)
+                                 dropdown_fg_color=BG_SURFACE, dropdown_hover_color=BG_HOVER, width=200)
         dropdown.set(current_val)
         dropdown.pack(side="left")
 
