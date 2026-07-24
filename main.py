@@ -298,6 +298,29 @@ def update_ui_from_json(data):
     entry_charging.insert(0, run['chargingStationCharge'])
     entry_haul.insert(0, run['totalHaul'])
 
+    # Tools section
+    section_tools = CTkFrame(frame_world, fg_color=BG_SURFACE, corner_radius=10)
+    section_tools.pack(fill="x", pady=(0, 8))
+    CTkLabel(section_tools, text="Quick Actions", font=font_heading, text_color=BG_ACCENT).pack(anchor="w", padx=12, pady=(8, 4))
+    
+    def recharge_all_items():
+        if 'itemStatBattery' in json_data['dictionaryOfDictionaries']['value']:
+            count = 0
+            for item_key in json_data['dictionaryOfDictionaries']['value']['itemStatBattery']:
+                if json_data['dictionaryOfDictionaries']['value']['itemStatBattery'][item_key] != 100:
+                    json_data['dictionaryOfDictionaries']['value']['itemStatBattery'][item_key] = 100
+                    count += 1
+            if count > 0:
+                textbox.delete("1.0", "end")
+                textbox.insert("1.0", json.dumps(json_data, indent=4))
+                highlight_json()
+                messagebox.showinfo("Success", f"Recharged {count} items (Guns, Crystals, etc.) to 100%!")
+            else:
+                messagebox.showinfo("Info", "All items are already fully charged.")
+
+    btn_recharge = CTkButton(section_tools, text="⚡ Recharge All Items (100%)", command=recharge_all_items, fg_color=BG_ACCENT, hover_color="#2b7e61", text_color="white")
+    btn_recharge.pack(anchor="w", padx=12, pady=(0, 12))
+
     section_team = CTkFrame(frame_world, fg_color=BG_SURFACE, corner_radius=10)
     section_team.pack(fill="x", pady=(0, 8))
     CTkLabel(section_team, text="Team", font=font_heading, text_color=BG_ACCENT).pack(anchor="w", padx=12, pady=(8, 4))
