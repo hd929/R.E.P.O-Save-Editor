@@ -383,6 +383,48 @@ def _update_ui_from_json_impl(data):
     btn_recharge = CTkButton(section_tools, text="⚡ Recharge All Items (100%)", command=recharge_all_items, fg_color=BG_ACCENT, hover_color="#2b7e61", text_color="white")
     btn_recharge.pack(anchor="w", padx=12, pady=(0, 12))
 
+    def spawn_crystals():
+        try:
+            dd = json_data.get('dictionaryOfDictionaries', {})
+            if not isinstance(dd, dict): return
+            inner = dd.get('value', {})
+            if not isinstance(inner, dict): return
+
+            # Get current max index
+            item_dict = inner.get('item', {})
+            if not isinstance(item_dict, dict):
+                inner['item'] = {}
+                item_dict = inner['item']
+                
+            crystal_indices = [int(k.split('/')[1]) for k in item_dict.keys() if k.startswith("Item Power Crystal/") and '/' in k]
+            next_idx = max(crystal_indices) + 1 if crystal_indices else 1
+            
+            # Spawn 5 new crystals
+            num_to_spawn = 5
+            for i in range(num_to_spawn):
+                new_key = f"Item Power Crystal/{next_idx + i}"
+                item_dict[new_key] = 28  # 28 is the item ID for Power Crystal
+                
+                if 'itemStatBattery' not in inner: inner['itemStatBattery'] = {}
+                inner['itemStatBattery'][new_key] = 100
+                
+            # Update totals
+            if 'itemsPurchased' not in inner: inner['itemsPurchased'] = {}
+            if 'itemsPurchasedTotal' not in inner: inner['itemsPurchasedTotal'] = {}
+            
+            inner['itemsPurchased']["Item Power Crystal"] = inner['itemsPurchased'].get("Item Power Crystal", 0) + num_to_spawn
+            inner['itemsPurchasedTotal']["Item Power Crystal"] = inner['itemsPurchasedTotal'].get("Item Power Crystal", 0) + num_to_spawn
+
+            textbox.delete("1.0", "end")
+            textbox.insert("1.0", json.dumps(json_data, indent=4))
+            highlight_json()
+            messagebox.showinfo("Success", f"Spawned {num_to_spawn} fully charged Power Crystals at your base!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not spawn items: {e}")
+
+    btn_spawn = CTkButton(section_tools, text="💎 Spawn 5 Power Crystals", command=spawn_crystals, fg_color=BG_ACCENT, hover_color="#2b7e61", text_color="white")
+    btn_spawn.pack(anchor="w", padx=12, pady=(0, 12))
+
     section_team = CTkFrame(frame_world, fg_color=BG_SURFACE, corner_radius=10)
     section_team.pack(fill="x", pady=(0, 8))
     CTkLabel(section_team, text="Team", font=font_heading, text_color=BG_ACCENT).pack(anchor="w", padx=12, pady=(8, 4))
