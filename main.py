@@ -501,14 +501,15 @@ def peek_save_info(es3_path):
             "lives": run.get("lives", "?"),
             "players": len(names),
             "team": team,
+            "steam_ids": list(names.keys()) if isinstance(names, dict) else [],
+            "player_names": list(names.values()) if isinstance(names, dict) else []
         }
         _save_info_cache[cache_key] = info
         return info
     except Exception:
         _save_info_cache[cache_key] = None
         return None
-
-def show_save_picker():
+def show_save_picker(filter_steam_id=None):
     # Clear existing content except footer and menu
     for w in root.winfo_children():
         if w != label_footer and w != menu:
@@ -525,13 +526,49 @@ def show_save_picker():
                  text_color=TEXT_DIM, wraplength=600).pack(expand=True)
         return
 
+    # Collect all unique Steam IDs across all saves for the filter
+    all_steam_ids = set()
+    save_infos = {}
+    for src_folder, es3_path in save_folders:
+        info = peek_save_info(es3_path)
+        save_infos[es3_path] = info
+        if info and "steam_ids" in info:
+            all_steam_ids.update(info["steam_ids"])
+
     picker_frame = CTkScrollableFrame(root, fg_color="transparent")
     picker_frame.pack(fill=BOTH, expand=True, padx=20, pady=10)
 
     header = CTkFrame(picker_frame, fg_color="transparent")
     header.pack(fill="x", pady=(0, 12))
     CTkLabel(header, text="Your Saves", font=("Segoe UI", 22, "bold"), text_color="white").pack(side="left")
-    CTkLabel(header, text=f"{len(save_folders)} saves found", font=font_small, text_color=TEXT_DIM).pack(side="right")
+
+    if all_steam_ids:
+        filter_frame = CTkFrame(header, fg_color="transparent")
+        filter_frame.pack(side="right", padx=(10, 0))
+        CTkLabel(filter_frame, text="Filter by Steam ID:", font=font_small, text_color=TEXT_DIM).pack(side="left", padx=(0, 5))
+        
+        filter_options = ["All Accounts"] + list(all_steam_ids)
+        current_val = filter_steam_id if filter_steam_id in filter_options else "All Accounts"
+        
+        def on_filter_change(choice):
+            show_save_picker(choice if choice != "All Accounts" else None)
+            
+        dropdown = CTkOptionMenu(filter_frame, values=filter_options, command=on_filter_change,
+                                 fg_color=BG_ENTRY, button_color=BG_SURFACE, button_hover_color=BG_HOVER,
+                                 dropdown_fg_color=BG_SURFACE, dropdown_hover_color=BG_HOVER, width=150)
+        dropdown.set(current_val)
+        dropdown.pack(side="left")
+
+    filtered_folders = []
+    for src_folder, es3_path in save_folders:
+        info = save_infos[es3_path]
+        if filter_steam_id and info and "steam_ids" in info:
+            if filter_steam_id not in info["steam_ids"]:
+                continue
+        filtered_folders.append((src_folder, es3_path))
+
+    CTkLabel(header, text=f"{len(filtered_folders)} saves found", font=font_small,
+             text_color=TEXT_DIM).pack(side="right", padx=(0, 15))
 
     def load_save(es3_path):
         global json_data, savefilename, savefile_path
@@ -541,7 +578,9 @@ def show_save_picker():
             savefile_path = es3_path
             update_ui_from_json(json_data)
         except Exception as e:
-            messagebox.showerror("Load Error", f"Failed to load:\n{es3_path.name}\n\n{e}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Load Error", f"Failed to load:\n{es3_path.name}\n\n{e}\n\nType: {type(e).__name__}")
 
     def duplicate_save(src_folder):
         timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
@@ -553,16 +592,16 @@ def show_save_picker():
                 f.rename(dest_folder / f"{new_name}.es3")
                 break
         messagebox.showinfo("Duplicated", f"Save duplicated as:\n{new_name}")
-        show_save_picker()
+        show_save_picker(filter_steam_id)
 
     def delete_save(src_folder):
         if messagebox.askyesno("Delete Save", f"Delete this save permanently?\n\n{src_folder.name}\n\nThis cannot be undone."):
             shutil.rmtree(str(src_folder))
-            show_save_picker()
+            show_save_picker(filter_steam_id)
 
-    for src_folder, es3_path in save_folders:
+    for src_folder, es3_path in filtered_folders:
         mtime = datetime.fromtimestamp(es3_path.stat().st_mtime).strftime("%Y-%m-%d  %H:%M")
-        info = peek_save_info(es3_path)
+        info = save_infos[es3_path]
 
         card = CTkFrame(picker_frame, fg_color=BG_SURFACE, corner_radius=10, border_width=1, border_color=BORDER_CLR)
         card.pack(fill="x", pady=4)
