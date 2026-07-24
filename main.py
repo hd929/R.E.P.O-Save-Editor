@@ -430,6 +430,24 @@ def _update_ui_from_json_impl(data):
         health_entry.insert(0, player['health'])
         player_entries[player['name']] = health_entry
 
+        def make_change_id_cmd(old_id):
+            def cmd():
+                dialog = CTkInputDialog(text="Enter new 17-digit Steam ID:", title="Change Steam ID")
+                new_id = dialog.get_input()
+                if new_id and new_id.strip() and new_id != old_id:
+                    new_id = new_id.strip()
+                    global json_data
+                    json_str = json.dumps(json_data)
+                    json_str = json_str.replace(old_id, new_id)
+                    json_data = json.loads(json_str)
+                    update_ui_from_json(json_data)
+                    messagebox.showinfo("Success", f"Changed Steam ID to {new_id}")
+            return cmd
+
+        btn_change_id = CTkButton(header, text="Change ID", width=80, height=24, font=font_small, 
+                                  fg_color=BG_ENTRY, hover_color=BG_HOVER, command=make_change_id_cmd(player['id']))
+        btn_change_id.pack(side="right", padx=10)
+
         CTkFrame(card, height=1, fg_color=BORDER_CLR).pack(fill="x", padx=10, pady=6)
         CTkLabel(card, text="Upgrades", font=("Segoe UI", 11, "bold"), text_color=TEXT_DIM).pack(anchor="w", padx=14)
 
