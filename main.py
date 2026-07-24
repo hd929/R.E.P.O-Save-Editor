@@ -333,8 +333,8 @@ def update_ui_from_json(data):
     frame_player = CTkScrollableFrame(tabview.tab("Player"), fg_color="transparent")
     frame_player.pack(fill=BOTH, expand=True, padx=5, pady=5)
 
-    for player_id, player_name in data["playerNames"]["value"].items():
-        player_health = data["dictionaryOfDictionaries"]["value"].get("playerHealth", {}).get(player_id, 100)
+    for player_id, player_name in data.get("playerNames", {}).get("value", {}).items():
+        player_health = data.get("dictionaryOfDictionaries", {}).get("value", {}).get("playerHealth", {}).get(player_id, 100)
         players.append({"id": player_id, "name": player_name, "health": player_health})
 
     for player in players:
@@ -362,7 +362,7 @@ def update_ui_from_json(data):
         CTkFrame(card, height=1, fg_color=BORDER_CLR).pack(fill="x", padx=10, pady=6)
         CTkLabel(card, text="Upgrades", font=("Segoe UI", 11, "bold"), text_color=TEXT_DIM).pack(anchor="w", padx=14)
 
-        dd = data['dictionaryOfDictionaries']['value']
+        dd = data.get('dictionaryOfDictionaries', {}).get('value', {})
         for label_text, key in UPGRADE_KEYS:
             val = dd.get(key, {}).get(player['id'], 0)
             e = create_entry(label_text, card, update_json_data, fg=BG_SURFACE)
