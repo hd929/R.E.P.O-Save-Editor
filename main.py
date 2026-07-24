@@ -293,12 +293,12 @@ def update_ui_from_json(data):
     entry_charging = create_entry("Charging Station", section_run, update_json_data, "Charging station charge amount", fg=BG_SURFACE)
     entry_haul = create_entry("Total Haul", section_run, update_json_data, "Total haul value", fg=BG_SURFACE)
 
-    run = data['dictionaryOfDictionaries']['value']['runStats']
-    entry_level.insert(0, run['level'])
-    entry_currency.insert(0, run['currency'])
-    entry_lives.insert(0, run['lives'])
-    entry_charging.insert(0, run['chargingStationCharge'])
-    entry_haul.insert(0, run['totalHaul'])
+    run = data.get('dictionaryOfDictionaries', {}).get('value', {}).get('runStats', {})
+    entry_level.insert(0, run.get('level', 1))
+    entry_currency.insert(0, run.get('currency', 0))
+    entry_lives.insert(0, run.get('lives', 3))
+    entry_charging.insert(0, run.get('chargingStationCharge', 0))
+    entry_haul.insert(0, run.get('totalHaul', 0))
 
     # Tools section
     section_tools = CTkFrame(frame_world, fg_color=BG_SURFACE, corner_radius=10)
@@ -327,7 +327,7 @@ def update_ui_from_json(data):
     section_team.pack(fill="x", pady=(0, 8))
     CTkLabel(section_team, text="Team", font=font_heading, text_color=BG_ACCENT).pack(anchor="w", padx=12, pady=(8, 4))
     entry_teamname = create_entry("Team Name", section_team, update_json_data, "Name of the team", fg=BG_SURFACE)
-    entry_teamname.insert(0, data['teamName']['value'])
+    entry_teamname.insert(0, data.get('teamName', {}).get('value', 'Unknown'))
 
     # ── Player tab ──
     frame_player = CTkScrollableFrame(tabview.tab("Player"), fg_color="transparent")
