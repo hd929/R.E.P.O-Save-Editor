@@ -286,6 +286,10 @@ def update_ui_from_json(data):
         messagebox.showerror("Load Error", f"Failed to load UI:\n{e}\n\nType: {type(e).__name__}")
 
 def _update_ui_from_json_impl(data):
+    global players, player_entries, json_data, textbox
+    players.clear()
+    player_entries.clear()
+    json_data = data
 
     # Clear root content
     for w in root.winfo_children():
