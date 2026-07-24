@@ -125,16 +125,16 @@ def highlight_json():
         textbox.tag_add("boolean", f"1.0+{match.start(2)}c", f"1.0+{match.end(2)}c")
 
 UPGRADE_KEYS = [
-    ("Health", "playerUpgradeHealth"),
-    ("Stamina", "playerUpgradeStamina"),
-    ("Extra Jump", "playerUpgradeExtraJump"),
-    ("Launch", "playerUpgradeLaunch"),
-    ("Map Player Count", "playerUpgradeMapPlayerCount"),
-    ("Speed", "playerUpgradeSpeed"),
-    ("Strength", "playerUpgradeStrength"),
-    ("Range", "playerUpgradeRange"),
-    ("Throw", "playerUpgradeThrow"),
-    ("Crown (0 or 1)", "playerHasCrown"),
+    ("Health", "playerUpgradeHealth", "Item Upgrade Player Health"),
+    ("Stamina", "playerUpgradeStamina", "Item Upgrade Player Energy"),
+    ("Extra Jump", "playerUpgradeExtraJump", "Item Upgrade Player Extra Jump"),
+    ("Launch", "playerUpgradeLaunch", "Item Upgrade Player Tumble Launch"),
+    ("Map Player Count", "playerUpgradeMapPlayerCount", "Item Upgrade Map Player Count"),
+    ("Speed", "playerUpgradeSpeed", "Item Upgrade Player Sprint Speed"),
+    ("Strength", "playerUpgradeStrength", "Item Upgrade Player Grab Strength"),
+    ("Range", "playerUpgradeRange", "Item Upgrade Player Grab Range"),
+    ("Throw", "playerUpgradeThrow", None),
+    ("Crown (0 or 1)", "playerHasCrown", None),
 ]
 
 # ── Data sync ──
@@ -168,12 +168,25 @@ def update_json_data(event=None):
                 player['health'] = val
                 dd['playerHealth'][pid] = val
             # Upgrades
-            for _, upgrade_key in UPGRADE_KEYS:
+            for _, upgrade_key, _ in UPGRADE_KEYS:
                 entry_key = f"{player['name']}_{upgrade_key}"
                 if entry_key in player_entries:
                     if upgrade_key not in dd:
                         dd[upgrade_key] = {}
                     dd[upgrade_key][pid] = int(player_entries[entry_key].get())
+                    
+        # Synchronize itemsUpgradesPurchased to bypass game validation
+        if 'itemsUpgradesPurchased' not in dd:
+            dd['itemsUpgradesPurchased'] = {}
+        if 'itemsPurchasedTotal' not in dd:
+            dd['itemsPurchasedTotal'] = {}
+            
+        for _, upgrade_key, item_name in UPGRADE_KEYS:
+            if item_name and upgrade_key in dd:
+                total_purchased = sum(dd[upgrade_key].values())
+                dd['itemsUpgradesPurchased'][item_name] = total_purchased
+                dd['itemsPurchasedTotal'][item_name] = total_purchased
+
         textbox.delete("1.0", "end")
         textbox.insert("1.0", json.dumps(json_data, indent=4))
         highlight_json()
@@ -426,7 +439,7 @@ def _update_ui_from_json_impl(data):
             upg_inner = dd3.get('value', {})
             if not isinstance(upg_inner, dict):
                 upg_inner = {}
-        for label_text, key in UPGRADE_KEYS:
+        for label_text, key, _ in UPGRADE_KEYS:
             upg_dict = upg_inner.get(key, {})
             if not isinstance(upg_dict, dict):
                 upg_dict = {}
