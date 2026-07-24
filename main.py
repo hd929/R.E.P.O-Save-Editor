@@ -138,15 +138,27 @@ UPGRADE_KEYS = [
 ]
 
 # ── Data sync ──
-def update_json_data(event):
+def update_json_data(event=None):
     try:
-        dd = json_data['dictionaryOfDictionaries']['value']
-        dd['runStats']['level'] = int(entry_level.get())
-        dd['runStats']['currency'] = int(entry_currency.get())
-        dd['runStats']['lives'] = int(entry_lives.get())
-        dd['runStats']['chargingStationCharge'] = int(entry_charging.get())
-        dd['runStats']['totalHaul'] = int(entry_haul.get())
+        dd = json_data.get('dictionaryOfDictionaries', {}).get('value', {})
+        runStats = dd.get('runStats', {})
+        runStats['level'] = int(entry_level.get())
+        runStats['currency'] = int(entry_currency.get())
+        runStats['lives'] = int(entry_lives.get())
+        runStats['chargingStationCharge'] = int(entry_charging.get())
+        runStats['totalHaul'] = int(entry_haul.get())
+        
+        if 'dictionaryOfDictionaries' not in json_data:
+            json_data['dictionaryOfDictionaries'] = {'value': dd}
+        dd['runStats'] = runStats
+
+        if 'teamName' not in json_data:
+            json_data['teamName'] = {}
         json_data['teamName']['value'] = entry_teamname.get()
+
+        if 'playerHealth' not in dd:
+            dd['playerHealth'] = {}
+
         for player in players:
             pid = player['id']
             # Health
@@ -165,7 +177,7 @@ def update_json_data(event):
         textbox.delete("1.0", "end")
         textbox.insert("1.0", json.dumps(json_data, indent=4))
         highlight_json()
-    except (ValueError, KeyError):
+    except (ValueError, KeyError, TypeError):
         pass
 
 def on_json_edit(event):
