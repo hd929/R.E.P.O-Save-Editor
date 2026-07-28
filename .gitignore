@@ -16,4 +16,7 @@ build/
 # Test / temp files
 *.json
 !package.json
-pass
+
+# OS
+Thumbs.db
+.DS_Store

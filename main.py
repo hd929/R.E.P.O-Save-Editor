@@ -1,4 +1,4 @@
-import sys, json, re, shutil, requests, webbrowser
+import sys, json, re, shutil, requests, webbrowser, os, tempfile
 from customtkinter import *
 from tkinter import BOTH, Text, filedialog, messagebox
 from lib.CTkMenuBar import *
@@ -26,7 +26,8 @@ BUNDLE_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
 CACHE_DIR = Path.home() / ".cache" / "noedl.xyz"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-version = "1.1.0"
+version = "1.1.6"
+repo_url = "https://github.com/hd929/R.E.P.O-Save-Editor"
 json_data = {}
 savefilename = ""
 savefile_path = None
@@ -63,14 +64,27 @@ font_mono    = ("Consolas", 10)
 # ── Menu bar ──
 menu = CTkTitleMenu(master=root)
 button_file = menu.add_cascade("File")
+button_view = menu.add_cascade("View")
 button_help = menu.add_cascade("Help")
-dropdown1 = CustomDropdownMenu(widget=button_file)
-dropdown1.add_option(option="Open", command=lambda: open_file())
-dropdown1.add_option(option="Save", command=lambda: save_data())
+dropdown1 = CustomDropdownMenu(widget=button_file, width=190)
+dropdown1.add_option(option="Open...                 Ctrl+O", command=lambda: open_file())
+dropdown1.add_option(option="Save                      Ctrl+S", command=lambda: save_data())
+dropdown1.add_option(option="Save As...", command=lambda: save_as())
+dropdown1.add_separator()
+dropdown1.add_option(option="Create Backup", command=lambda: create_backup())
+dropdown1.add_option(option="Import JSON...", command=lambda: import_json())
+dropdown1.add_option(option="Export JSON...", command=lambda: export_json())
+dropdown1.add_separator()
+dropdown1.add_option(option="Open Save Folder", command=lambda: open_save_folder())
+dropdown1.add_option(option="Exit", command=root.destroy)
+dropdown_view = CustomDropdownMenu(widget=button_view, width=170)
+dropdown_view.add_option(option="Save Picker", command=lambda: show_save_picker())
+dropdown_view.add_option(option="Reload Save             F5", command=lambda: reload_save())
+dropdown_view.add_option(option="Refresh Preview", command=lambda: refresh_save_picker())
 dropdown2 = CustomDropdownMenu(widget=button_help)
-dropdown2.add_option(option="How to Use", command=lambda: webbrowser.open("https://github.com/N0edL/R.E.P.O-Save-Editor#how-to-use"))
-dropdown2.add_option(option="About", command=lambda: webbrowser.open("https://github.com/N0edL/R.E.P.O-Save-Editor"))
-dropdown2.add_option(option="Report Issue", command=lambda: webbrowser.open("https://github.com/N0edL/R.E.P.O-Save-Editor/issues/new"))
+dropdown2.add_option(option="How to Use", command=lambda: webbrowser.open(f"{repo_url}#how-to-use"))
+dropdown2.add_option(option="About", command=lambda: webbrowser.open(repo_url))
+dropdown2.add_option(option="Report Issue", command=lambda: webbrowser.open(f"{repo_url}/issues/new"))
 
 # ── Footer (version check in background) ──
 label_footer = CTkLabel(root, text=f"v{version}  |  {datetime.now().year} noedl.xyz", font=font_small, text_color=TEXT_DIM)
@@ -78,23 +92,41 @@ label_footer.pack(side="bottom", pady=5)
 
 def check_version_async():
     try:
-        response = requests.get("https://api.github.com/repos/N0edL/R.E.P.O-Save-Editor/releases/latest", timeout=5)
+        response = requests.get(f"{repo_url}/releases/latest", timeout=5)
         latest = response.json().get("tag_name", "Unknown")
         if latest not in (version, f"v{version}", "Unknown"):
             root.after(0, lambda: label_footer.configure(
-                text=f"v{version}  (Latest: {latest})  |  {datetime.now().year} noedl.xyz"))
+                text=f"v{version}  (Latest: {latest})  |  {datetime.now().year}"))
     except Exception:
         pass
 
 Thread(target=check_version_async, daemon=True).start()
+root.bind_all("<Control-o>", lambda event: open_file())
+root.bind_all("<Control-s>", lambda event: save_data())
+root.bind_all("<F5>", lambda event: reload_save())
 
 # ── State ──
 players = []
-player_entries = {}  # key: "{name}" for health, "{name}_{upgradeKey}" for upgrades
+player_entries = {}  # key: steam_id for health, steam_id + "_" + upgradeKey for upgrades
 
 # ── Helpers ──
 def decrypt_save(path):
     return json.loads(decrypt_es3(str(path), ES3_KEY))
+
+_pending_data_update = None
+_pending_json_edit = None
+
+def schedule_data_update(event=None):
+    global _pending_data_update
+    if _pending_data_update:
+        root.after_cancel(_pending_data_update)
+    _pending_data_update = root.after(180, update_json_data)
+
+def schedule_json_edit(event=None):
+    global _pending_json_edit
+    if _pending_json_edit:
+        root.after_cancel(_pending_json_edit)
+    _pending_json_edit = root.after(250, on_json_edit)
 
 def create_entry(label_text, parent, update_callback=None, tooltip=None, fg=BG_CARD):
     frame = CTkFrame(parent, fg_color=fg, corner_radius=6)
@@ -105,7 +137,7 @@ def create_entry(label_text, parent, update_callback=None, tooltip=None, fg=BG_C
     if tooltip:
         CTkToolTip(frame, tooltip)
     if update_callback:
-        entry.bind("<KeyRelease>", update_callback)
+        entry.bind("<KeyRelease>", schedule_data_update)
     return entry
 
 # ── JSON Highlight ──
@@ -139,6 +171,8 @@ UPGRADE_KEYS = [
 
 # ── Data sync ──
 def update_json_data(event=None):
+    global _pending_data_update
+    _pending_data_update = None
     try:
         dd = json_data.get('dictionaryOfDictionaries', {}).get('value', {})
         runStats = dd.get('runStats', {})
@@ -148,7 +182,7 @@ def update_json_data(event=None):
             try:
                 v = int(val_str)
                 return min(v, max_val)
-            except ValueError:
+            except (TypeError, ValueError):
                 return 0
 
         runStats['level'] = safe_int(entry_level.get())
@@ -171,14 +205,13 @@ def update_json_data(event=None):
         for player in players:
             pid = player['id']
             # Health
-            health_key = player['name']
-            if health_key in player_entries:
-                val = safe_int(player_entries[health_key].get(), max_val=2000000000)
+            if pid in player_entries:
+                val = safe_int(player_entries[pid].get(), max_val=2000000000)
                 player['health'] = val
                 dd['playerHealth'][pid] = val
             # Upgrades
             for _, upgrade_key, _ in UPGRADE_KEYS:
-                entry_key = f"{player['name']}_{upgrade_key}"
+                entry_key = f"{pid}_{upgrade_key}"
                 if entry_key in player_entries:
                     if upgrade_key not in dd:
                         dd[upgrade_key] = {}
@@ -202,8 +235,9 @@ def update_json_data(event=None):
     except (ValueError, KeyError, TypeError):
         pass
 
-def on_json_edit(event):
-    global json_data
+def on_json_edit(event=None):
+    global json_data, _pending_json_edit
+    _pending_json_edit = None
     try:
         updated_data = json.loads(textbox.get("1.0", "end-1c"))
         dd = updated_data.get('dictionaryOfDictionaries', {})
@@ -242,19 +276,132 @@ def open_file():
         messagebox.showerror("Open Error", f"Failed to open:\n{file_path}\n\n{e}\n\nType: {type(e).__name__}")
 
 def save_data():
+    global _pending_data_update, _pending_json_edit
+    if _pending_data_update:
+        root.after_cancel(_pending_data_update)
+        _pending_data_update = None
+        update_json_data()
+    if _pending_json_edit:
+        root.after_cancel(_pending_json_edit)
+        _pending_json_edit = None
+        on_json_edit()
+    if not json_data:
+        messagebox.showerror("Error", "No data to save.")
+        return False
+    if not savefile_path:
+        messagebox.showerror("Error", "No save file loaded.")
+        return False
+    temp_path = None
+    try:
+        encrypted_data = encrypt_es3(json.dumps(json_data, indent=4).encode('utf-8'), ES3_KEY)
+        with tempfile.NamedTemporaryFile('wb', dir=savefile_path.parent, delete=False) as temp_file:
+            temp_file.write(encrypted_data)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+            temp_path = Path(temp_file.name)
+        os.replace(temp_path, savefile_path)
+        _save_info_cache.clear()
+        messagebox.showinfo("Saved", f"Saved:\n{savefile_path.name}")
+        return True
+    except Exception as e:
+        if temp_path:
+            temp_path.unlink(missing_ok=True)
+        messagebox.showerror("Save Error", f"Failed to save:\n{e}")
+        return False
+
+def save_as():
+    global savefile_path, savefilename
     if not json_data:
         messagebox.showerror("Error", "No data to save.")
         return
-    if not savefile_path:
-        messagebox.showerror("Error", "No save file loaded.")
+    path = filedialog.asksaveasfilename(initialdir=savefile_path.parent if savefile_path else savefile_dir,
+                                        initialfile=savefilename or "REPO_SAVE.es3",
+                                        defaultextension=".es3", filetypes=[("Game Save (.es3 file)", "*.es3")])
+    if not path:
+        return
+    old_path, old_name = savefile_path, savefilename
+    savefile_path, savefilename = Path(path), Path(path).name
+    if not save_data():
+        savefile_path, savefilename = old_path, old_name
+
+def create_backup():
+    if not savefile_path or not savefile_path.exists():
+        messagebox.showerror("Backup Error", "No save file loaded.")
+        return
+    backup_path = savefile_path.with_name(f"{savefile_path.stem}_BACKUP_{datetime.now():%Y_%m_%d_%H_%M_%S}.es3")
+    try:
+        shutil.copy2(savefile_path, backup_path)
+        messagebox.showinfo("Backup Created", f"Created:\n{backup_path.name}")
+    except OSError as e:
+        messagebox.showerror("Backup Error", f"Failed to create backup:\n{e}")
+
+REQUIRED_TOP_LEVEL = {"dictionaryOfDictionaries", "playerNames", "teamName"}
+REQUIRED_DD_INNER = {"runStats"}
+
+def validate_save_schema(data):
+    if not isinstance(data, dict):
+        raise ValueError("Root JSON value must be an object.")
+    missing = REQUIRED_TOP_LEVEL - data.keys()
+    if missing:
+        raise ValueError(f"Missing required top-level keys: {', '.join(sorted(missing))}.")
+    dd = data.get("dictionaryOfDictionaries")
+    if not isinstance(dd, dict):
+        raise ValueError("dictionaryOfDictionaries must be an object.")
+    inner = dd.get("value")
+    if not isinstance(inner, dict):
+        raise ValueError("dictionaryOfDictionaries.value must be an object.")
+    if not REQUIRED_DD_INNER.issubset(inner.keys()):
+        raise ValueError(f"Missing required keys in dictionaryOfDictionaries.value: {', '.join(sorted(REQUIRED_DD_INNER - inner.keys()))}.")
+    return True
+
+def import_json():
+    global json_data
+    path = filedialog.askopenfilename(filetypes=[("JSON file", "*.json")])
+    if not path:
         return
     try:
-        encrypted_data = encrypt_es3(json.dumps(json_data, indent=4).encode('utf-8'), ES3_KEY)
-        with open(savefile_path, 'wb') as f:
-            f.write(encrypted_data)
-        messagebox.showinfo("Saved", f"Saved:\n{savefile_path.name}")
+        with open(path, encoding="utf-8") as file:
+            data = json.load(file)
+        validate_save_schema(data)
+        json_data = data
+        update_ui_from_json(json_data)
+    except (OSError, ValueError, json.JSONDecodeError) as e:
+        messagebox.showerror("Import Error", f"Failed to import JSON:\n{e}")
+
+def export_json():
+    if not json_data:
+        messagebox.showerror("Export Error", "No data loaded.")
+        return
+    path = filedialog.asksaveasfilename(initialfile=f"{Path(savefilename).stem or 'save'}.json",
+                                        defaultextension=".json", filetypes=[("JSON file", "*.json")])
+    if not path:
+        return
+    try:
+        with open(path, "w", encoding="utf-8") as file:
+            json.dump(json_data, file, indent=4, ensure_ascii=False)
+    except OSError as e:
+        messagebox.showerror("Export Error", f"Failed to export JSON:\n{e}")
+
+def open_save_folder():
+    path = savefile_path.parent if savefile_path else savefile_dir
+    if path.exists():
+        os.startfile(path)
+    else:
+        messagebox.showerror("Folder Error", f"Folder not found:\n{path}")
+
+def reload_save():
+    global json_data
+    if not savefile_path:
+        return
+    try:
+        json_data = decrypt_save(savefile_path)
+        update_ui_from_json(json_data)
     except Exception as e:
-        messagebox.showerror("Save Error", f"Failed to save:\n{e}")
+        messagebox.showerror("Reload Error", f"Failed to reload save:\n{e}")
+
+def refresh_save_picker():
+    _save_info_cache.clear()
+    show_save_picker()
 
 # ── Steam avatar ──
 def fetch_steam_profile_picture(player_id):
@@ -262,6 +409,15 @@ def fetch_steam_profile_picture(player_id):
     if cached_image_path.exists():
         return str(cached_image_path)
     url = f"https://steamcommunity.com/profiles/{player_id}?xml=1"
+    fallback_path = CACHE_DIR / f"{player_id}_fallback.png"
+    if not fallback_path.exists():
+        src = BUNDLE_DIR / "example.png"
+        if src.exists():
+            shutil.copy(str(src), str(fallback_path))
+    Thread(target=_download_steam_avatar, args=(player_id, url, cached_image_path), daemon=True).start()
+    return str(fallback_path) if fallback_path.exists() else None
+
+def _download_steam_avatar(player_id, url, cached_image_path):
     try:
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
@@ -399,39 +555,96 @@ def _update_ui_from_json_impl(data):
             inner = dd.get('value', {})
             if not isinstance(inner, dict): return
 
-            dialog = CTkInputDialog(text="How many Power Crystals do you want to drop?", title="Delivery Drop")
-            amount = dialog.get_input()
-            if not amount or not amount.isdigit():
-                return
-                
-            num_crystals = int(amount)
-            if num_crystals <= 0: return
-
-            items_to_add = {
-                "Item Power Crystal": num_crystals,
-                "Item Gun Handgun": 1,
-                "Item Gun Shotgun": 1,
-                "Item Health Pack Large": 1
-            }
-
-            if 'itemsPurchased' not in inner: inner['itemsPurchased'] = {}
-            if 'itemsPurchasedTotal' not in inner: inner['itemsPurchasedTotal'] = {}
+            # Get known items from save file to let user choose
+            known_items = set([
+                "Item Cart",
+                "Item Drone",
+                "Item Duck",
+                "Item Extraction",
+                "Item Grenade",
+                "Item Gun Assault Rifle",
+                "Item Gun Handgun", 
+                "Item Gun Shotgun", 
+                "Item Gun Sniper",
+                "Item Health Pack Large", 
+                "Item Health Pack Small", 
+                "Item Melee",
+                "Item Mine",
+                "Item Orb",
+                "Item Phase",
+                "Item Power Crystal", 
+                "Item Revive Pack",
+                "Item Rubber",
+                "Item Upgrade",
+                "Item Valuable"
+            ])
+            if 'itemsPurchasedTotal' in inner:
+                known_items.update(inner['itemsPurchasedTotal'].keys())
             
-            for itm, qty in items_to_add.items():
-                inner['itemsPurchased'][itm] = inner['itemsPurchased'].get(itm, 0) + qty
-                inner['itemsPurchasedTotal'][itm] = inner['itemsPurchasedTotal'].get(itm, 0) + qty
+            known_items = sorted([k for k in known_items if isinstance(k, str) and k.startswith("Item ")])
 
-            # Save to file automatically
-            save_data()
+            dialog = CTkToplevel(root)
+            dialog.title("Delivery Drop (Shopping Cart)")
+            dialog.geometry("400x500")
+            dialog.transient(root)
+            dialog.grab_set()
 
-            textbox.delete("1.0", "end")
-            textbox.insert("1.0", json.dumps(json_data, indent=4))
-            highlight_json()
-            messagebox.showinfo("Success", f"Added {num_crystals} Power Crystals and some guns to your delivery queue!\nLoad your game to receive the package.")
+            CTkLabel(dialog, text="Select Items to Drop", font=font_heading).pack(pady=(15, 5))
+            CTkLabel(dialog, text="Items will arrive in the shopping cart.", text_color=TEXT_DIM).pack(pady=(0, 10))
+
+            scroll = CTkScrollableFrame(dialog, fg_color="transparent")
+            scroll.pack(fill="both", expand=True, padx=10, pady=5)
+
+            item_vars = {}
+            for item_name in known_items:
+                frame = CTkFrame(scroll, fg_color=BG_SURFACE)
+                frame.pack(fill="x", pady=2)
+                display_name = item_name.replace("Item ", "")
+                CTkLabel(frame, text=display_name, text_color="white").pack(side="left", padx=10)
+                
+                var = StringVar(value="0")
+                item_vars[item_name] = var
+                entry = CTkEntry(frame, textvariable=var, width=50, justify="center")
+                entry.pack(side="right", padx=10, pady=4)
+
+            def apply_spawn():
+                items_to_add = {}
+                for itm, var in item_vars.items():
+                    try:
+                        val = int(var.get())
+                        if val > 0:
+                            items_to_add[itm] = val
+                    except ValueError:
+                        pass
+                
+                if not items_to_add:
+                    dialog.destroy()
+                    return
+
+                if 'itemsPurchased' not in inner: inner['itemsPurchased'] = {}
+                if 'itemsPurchasedTotal' not in inner: inner['itemsPurchasedTotal'] = {}
+                
+                for itm, qty in items_to_add.items():
+                    inner['itemsPurchased'][itm] = inner['itemsPurchased'].get(itm, 0) + qty
+                    inner['itemsPurchasedTotal'][itm] = inner['itemsPurchasedTotal'].get(itm, 0) + qty
+
+                if not save_data():
+                    return
+
+                textbox.delete("1.0", "end")
+                textbox.insert("1.0", json.dumps(json_data, indent=4))
+                highlight_json()
+                
+                total_qty = sum(items_to_add.values())
+                dialog.destroy()
+                messagebox.showinfo("Success", f"Added {total_qty} items to your delivery queue!\nLoad your game to receive the package.")
+
+            CTkButton(dialog, text="Add to Delivery", command=apply_spawn, fg_color=BG_ACCENT, hover_color="#2b7e61").pack(pady=15)
+
         except Exception as e:
             messagebox.showerror("Error", f"Could not spawn items: {e}")
 
-    btn_spawn = CTkButton(section_tools, text="📦 Drop Delivery (Guns, Meds, Grenades)", command=spawn_items, fg_color=BG_ACCENT, hover_color="#2b7e61", text_color="white")
+    btn_spawn = CTkButton(section_tools, text="📦 Drop Delivery (Shopping Cart)", command=spawn_items, fg_color=BG_ACCENT, hover_color="#2b7e61", text_color="white")
     btn_spawn.pack(anchor="w", padx=12, pady=(0, 12))
 
     section_team = CTkFrame(frame_world, fg_color=BG_SURFACE, corner_radius=10)
@@ -483,7 +696,7 @@ def _update_ui_from_json_impl(data):
 
         health_entry = create_entry("Health", card, update_json_data, "Player health (max 200)", fg=BG_SURFACE)
         health_entry.insert(0, player['health'])
-        player_entries[player['name']] = health_entry
+        player_entries[player['id']] = health_entry
 
         def make_change_id_cmd(old_id):
             def cmd():
@@ -491,10 +704,17 @@ def _update_ui_from_json_impl(data):
                 new_id = dialog.get_input()
                 if new_id and new_id.strip() and new_id != old_id:
                     new_id = new_id.strip()
+                    if not re.fullmatch(r"\d{17}", new_id):
+                        messagebox.showerror("Invalid Steam ID", "Steam ID must contain exactly 17 digits.")
+                        return
                     global json_data
-                    json_str = json.dumps(json_data)
-                    json_str = json_str.replace(old_id, new_id)
-                    json_data = json.loads(json_str)
+                    def replace_id(value):
+                        if isinstance(value, dict):
+                            return {replace_id(k): replace_id(v) for k, v in value.items()}
+                        if isinstance(value, list):
+                            return [replace_id(item) for item in value]
+                        return new_id if value == old_id else value
+                    json_data = replace_id(json_data)
                     update_ui_from_json(json_data)
                     messagebox.showinfo("Success", f"Changed Steam ID to {new_id}")
             return cmd
@@ -539,7 +759,7 @@ def _update_ui_from_json_impl(data):
     textbox.tag_configure("boolean", foreground="#4cc9f0")
 
     highlight_json()
-    textbox.bind("<KeyRelease>", on_json_edit)
+    textbox.bind("<KeyRelease>", schedule_json_edit)
 
 # ── Save Picker ──
 def get_save_folders():
@@ -559,7 +779,7 @@ def get_save_folders():
 _save_info_cache = {}
 
 def peek_save_info(es3_path):
-    """Read save file and return summary dict, or None on failure. Cached."""
+    """Read save file and return summary dict, or None on failure. Uses in-memory cache keyed by path+mtime."""
     cache_key = (str(es3_path), es3_path.stat().st_mtime)
     if cache_key in _save_info_cache:
         return _save_info_cache[cache_key]
@@ -575,7 +795,7 @@ def peek_save_info(es3_path):
             "players": len(names),
             "team": team,
             "steam_ids": list(names.keys()) if isinstance(names, dict) else [],
-            "player_names": list(names.values()) if isinstance(names, dict) else []
+            "player_names": list(names.values()) if isinstance(names, dict) else [],
         }
         _save_info_cache[cache_key] = info
         return info
@@ -583,23 +803,25 @@ def peek_save_info(es3_path):
         _save_info_cache[cache_key] = None
         return None
 def show_save_picker(filter_steam_id=None):
-    # Clear existing content except footer and menu
     for w in root.winfo_children():
         if w != label_footer and w != menu:
             w.destroy()
 
+    CTkLabel(root, text="Loading saves...", font=font_normal, text_color=TEXT_DIM).pack(expand=True)
+    root.update_idletasks()
+
+    Thread(target=_build_save_picker, args=(filter_steam_id,), daemon=True).start()
+
+def _build_save_picker(filter_steam_id):
     if not savefile_dir.exists():
-        CTkLabel(root, text=f"Save directory not found:\n{savefile_dir}", font=font_normal,
-                 text_color=TEXT_DIM, wraplength=600).pack(expand=True)
+        root.after(0, _show_no_saves, f"Save directory not found:\n{savefile_dir}")
         return
 
     save_folders = get_save_folders()
     if not save_folders:
-        CTkLabel(root, text=f"No saves found in:\n{savefile_dir}", font=font_normal,
-                 text_color=TEXT_DIM, wraplength=600).pack(expand=True)
+        root.after(0, _show_no_saves, f"No saves found in:\n{savefile_dir}")
         return
 
-    # Collect all unique Steam IDs across all saves for the filter
     all_steam_ids = {}
     save_infos = {}
     for src_folder, es3_path in save_folders:
@@ -609,6 +831,19 @@ def show_save_picker(filter_steam_id=None):
             for sid, sname in zip(info["steam_ids"], info["player_names"]):
                 if sid not in all_steam_ids:
                     all_steam_ids[sid] = sname
+
+    root.after(0, _clear_picker_and_build, filter_steam_id, save_folders, all_steam_ids, save_infos)
+
+def _show_no_saves(message):
+    for w in root.winfo_children():
+        if w != label_footer and w != menu:
+            w.destroy()
+    CTkLabel(root, text=message, font=font_normal, text_color=TEXT_DIM, wraplength=600).pack(expand=True)
+
+def _clear_picker_and_build(filter_steam_id, save_folders, all_steam_ids, save_infos):
+    for w in root.winfo_children():
+        if w != label_footer and w != menu:
+            w.destroy()
 
     picker_frame = CTkScrollableFrame(root, fg_color="transparent")
     picker_frame.pack(fill=BOTH, expand=True, padx=20, pady=10)
@@ -621,21 +856,20 @@ def show_save_picker(filter_steam_id=None):
         filter_frame = CTkFrame(header, fg_color="transparent")
         filter_frame.pack(side="right", padx=(10, 0))
         CTkLabel(filter_frame, text="Filter by Account:", font=font_small, text_color=TEXT_DIM).pack(side="left", padx=(0, 5))
-        
+
         filter_options = ["All Accounts"] + [f"{name} ({sid})" for sid, name in all_steam_ids.items()]
-        
+
         current_val = "All Accounts"
         if filter_steam_id and filter_steam_id in all_steam_ids:
             current_val = f"{all_steam_ids[filter_steam_id]} ({filter_steam_id})"
-            
+
         def on_filter_change(choice):
             if choice == "All Accounts":
                 show_save_picker(None)
             else:
-                # Extract Steam ID from format "Name (ID)"
                 sid = choice.split(" (")[-1].replace(")", "")
                 show_save_picker(sid)
-            
+
         dropdown = CTkOptionMenu(filter_frame, values=filter_options, command=on_filter_change,
                                  fg_color=BG_ENTRY, button_color=BG_SURFACE, button_hover_color=BG_HOVER,
                                  dropdown_fg_color=BG_SURFACE, dropdown_hover_color=BG_HOVER, width=200)
