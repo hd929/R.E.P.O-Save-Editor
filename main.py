@@ -92,7 +92,7 @@ label_footer.pack(side="bottom", pady=5)
 
 def check_version_async():
     try:
-        response = requests.get(f"{repo_url}/releases/latest", timeout=5)
+        response = requests.get("https://api.github.com/repos/hd929/R.E.P.O-Save-Editor/releases/latest", timeout=5)
         latest = response.json().get("tag_name", "Unknown")
         if latest not in (version, f"v{version}", "Unknown"):
             root.after(0, lambda: label_footer.configure(
@@ -739,7 +739,7 @@ def _update_ui_from_json_impl(data):
             val = upg_dict.get(player['id'], 0)
             e = create_entry(label_text, card, update_json_data, fg=BG_SURFACE)
             e.insert(0, val)
-            player_entries[f"{player['name']}_{key}"] = e
+            player_entries[f"{player['id']}_{key}"] = e
 
     # ── Advanced tab ──
     frame_advanced = CTkFrame(tabview.tab("Advanced"), corner_radius=10, fg_color=BG_SURFACE)
